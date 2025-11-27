@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#F5F5F5">
+
+    <!-- Panel de Control -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@android:color/white"
+        android:padding="12dp"
+        android:elevation="4dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Radio (a):"
+            android:textSize="16sp"
+            android:textColor="#333333"
+            android:layout_marginEnd="8dp"/>
+
+        <EditText
+            android:id="@+id/etRadius"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Ingrese radio"
+            android:inputType="numberDecimal"
+            android:textSize="16sp"
+            android:padding="8dp"
+            android:background="@android:drawable/edit_text"/>
+
+        <Button
+            android:id="@+id/btnCalculate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Calcular"
+            android:textSize="14sp"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+    <!-- Área de Visualización 3D (Vista OpenGL) -->
+    <upv_dap.sep_dic_25.itiid_76129.piu3.z_u3_76129_e_05.CycloidGLView
+        android:id="@+id/cycloidView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="16dp"/>
+
+    <!-- Panel de Resultados -->
+    <TextView
+        android:id="@+id/tvResult"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:padding="12dp"
+        android:background="@android:color/white"
+        android:elevation="2dp"
+        android:text="Ingrese un radio y presione 'Calcular' para iniciar"
+        android:textSize="14sp"
+        android:textColor="#333333"
+        android:lineSpacingExtra="4dp"
+        android:fontFamily="monospace"/>
+
+</LinearLayout>
