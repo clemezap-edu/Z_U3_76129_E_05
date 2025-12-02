@@ -1,5 +1,6 @@
 package upv_dap.sep_dic_25.itiid_76129.piu3.z_u3_76129_e_05;
 
+
 import android.content.Context;
 import android.opengl.GLSurfaceView;
 import android.util.AttributeSet;
@@ -17,7 +18,7 @@ public class CycloidGLView extends GLSurfaceView {
     private float previousX;
     private float previousY;
 
-    private static final float TOUCH_SCALE_FACTOR = 180.0f / 320;
+    private static final float TOUCH_SCALE_FACTOR = 0.5f; // Más suave y preciso
 
     public CycloidGLView(Context context) {
         super(context);
@@ -68,19 +69,27 @@ public class CycloidGLView extends GLSurfaceView {
         float y = event.getY();
 
         switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                previousX = x;
+                previousY = y;
+                break;
+
             case MotionEvent.ACTION_MOVE:
                 float dx = x - previousX;
                 float dy = y - previousY;
 
                 // Rotar la cámara basado en el movimiento del dedo
-                renderer.rotateCamera(dy * TOUCH_SCALE_FACTOR, dx * TOUCH_SCALE_FACTOR);
+                // dx controla rotación horizontal (Y), dy controla rotación vertical (X)
+                renderer.rotateCamera(
+                        -dy * TOUCH_SCALE_FACTOR,  // Pitch (vertical)
+                        dx * TOUCH_SCALE_FACTOR    // Yaw (horizontal)
+                );
 
-                requestRender();
+                previousX = x;
+                previousY = y;
                 break;
         }
 
-        previousX = x;
-        previousY = y;
         return true;
     }
 }

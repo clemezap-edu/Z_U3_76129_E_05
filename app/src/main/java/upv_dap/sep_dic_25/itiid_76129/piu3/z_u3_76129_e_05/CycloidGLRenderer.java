@@ -26,11 +26,13 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     // Rotación de la cámara
     private float cameraRotationX = 30f;
     private float cameraRotationY = 45f;
+    private float cameraDistance = 400f;
 
     // Parámetros de animación
     private double radius = 50.0;
     private double currentTheta = 0.0;
     private boolean isAnimating = false;
+    private boolean animationComplete = false;
     private static final double THETA_INCREMENT = 0.02;
     private static final double TWO_PI = 2 * Math.PI;
 
@@ -112,40 +114,57 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         drawAxis();
         drawArea();
         drawCycloidTrail();
-        drawCircle();
-        drawSpokes();
-        drawTracerPoint();
+
+        // Solo dibujar la rueda si hay animación activa o completada
+        if (isAnimating || animationComplete) {
+            drawCircle();
+            drawSpokes();
+            drawTracerPoint();
+        }
     }
 
     /**
      * Configura la posición y rotación de la cámara
+     * Permite vista orbital completa alrededor del cicloide
      */
     private void setupCamera() {
-        // Posición de la cámara
-        float eyeX = 0f;
-        float eyeY = 0f;
-        float eyeZ = (float) (radius * 15);
+        // Calcular posición de cámara orbital
+        float radX = (float) Math.toRadians(cameraRotationX);
+        float radY = (float) Math.toRadians(cameraRotationY);
+
+        // Posición de la cámara en coordenadas esféricas
+        float eyeX = cameraDistance * (float) (Math.cos(radX) * Math.sin(radY));
+        float eyeY = cameraDistance * (float) Math.sin(radX);
+        float eyeZ = cameraDistance * (float) (Math.cos(radX) * Math.cos(radY));
+
+        // Centro del cicloide (punto al que mira la cámara)
+        float centerX = (float) (Math.PI * radius);
+        float centerY = (float) radius;
+        float centerZ = 0f;
 
         Matrix.setLookAtM(viewMatrix, 0,
-                eyeX, eyeY, eyeZ,
-                0f, 0f, 0f,
-                0f, 1f, 0f);
+                eyeX + centerX, eyeY + centerY, eyeZ + centerZ,  // Posición cámara
+                centerX, centerY, centerZ,                        // Punto de mira
+                0f, 1f, 0f);                                      // Vector arriba
 
-        // Aplicar rotaciones de cámara
+        // Sin rotación adicional en el modelo
         Matrix.setIdentityM(modelMatrix, 0);
-        Matrix.rotateM(modelMatrix, 0, cameraRotationX, 1f, 0f, 0f);
-        Matrix.rotateM(modelMatrix, 0, cameraRotationY, 0f, 1f, 0f);
     }
 
     /**
      * Actualiza la animación
      */
     private void updateAnimation() {
+        if (animationComplete) {
+            return; // No continuar si ya se completó
+        }
+
         currentTheta += THETA_INCREMENT;
 
         if (currentTheta >= TWO_PI) {
-            currentTheta = 0.0;
-            trailPoints.clear();
+            currentTheta = TWO_PI;
+            animationComplete = true;
+            isAnimating = false;
         }
 
         // Añadir nuevo punto al trazo
@@ -207,14 +226,14 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnableVertexAttribArray(positionHandle);
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, cycloidTrailBuffer);
 
-        // Color azul
-        GLES20.glUniform4f(colorHandle, 0f, 0.47f, 0.84f, 1.0f);
+        // Color azul vibrante
+        GLES20.glUniform4f(colorHandle, 0.2f, 0.5f, 1.0f, 1.0f);
 
         Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0);
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0);
         GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
 
-        GLES20.glLineWidth(8f);
+        GLES20.glLineWidth(6f);
         GLES20.glDrawArrays(GLES20.GL_LINE_STRIP, 0, trailPoints.size());
 
         GLES20.glDisableVertexAttribArray(positionHandle);
@@ -266,20 +285,23 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     }
 
     /**
-     * Dibuja los radios del círculo
+     * Dibuja los radios del círculo (rayos de la rueda)
      */
     private void drawSpokes() {
         double centerX = currentTheta * radius;
         double centerY = radius;
 
-        int numSpokes = 12;
+        int numSpokes = 24; // Más radios para parecer rueda de bicicleta
         float[] vertices = new float[numSpokes * 6];
 
         for (int i = 0; i < numSpokes; i++) {
-            double angle = -currentTheta + (i * Math.PI / 6);
+            double angle = -currentTheta + (i * TWO_PI / numSpokes);
 
-            vertices[i * 6] = (float) centerX;
-            vertices[i * 6 + 1] = (float) centerY;
+            // Desde el rin interior hasta el borde
+            float innerRadius = (float) (radius * 0.15f);
+
+            vertices[i * 6] = (float) (centerX + innerRadius * Math.sin(angle));
+            vertices[i * 6 + 1] = (float) (centerY - innerRadius * Math.cos(angle));
             vertices[i * 6 + 2] = 0f;
 
             vertices[i * 6 + 3] = (float) (centerX + radius * Math.sin(angle));
@@ -302,7 +324,8 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnableVertexAttribArray(positionHandle);
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, spokesBuffer);
 
-        GLES20.glUniform4f(colorHandle, 0.6f, 0.6f, 0.6f, 0.5f);
+        // Color plateado para los radios
+        GLES20.glUniform4f(colorHandle, 0.75f, 0.75f, 0.8f, 1.0f);
 
         Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0);
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0);
@@ -318,6 +341,8 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
      * Dibuja el punto trazador
      */
     private void drawTracerPoint() {
+        if (!isAnimating && !animationComplete) return;
+
         double centerX = currentTheta * radius;
         double centerY = radius;
         double rotationAngle = -currentTheta;
@@ -326,7 +351,7 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         float pointY = (float) (centerY - radius * Math.cos(rotationAngle));
 
         // Dibujar como un pequeño cuadrado (2 triángulos)
-        float size = (float) (radius * 0.15f);
+        float size = (float) (radius * 0.2f);
         float[] vertices = {
                 pointX - size, pointY - size, 0f,
                 pointX + size, pointY - size, 0f,
@@ -349,7 +374,8 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnableVertexAttribArray(positionHandle);
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, buffer);
 
-        GLES20.glUniform4f(colorHandle, 0f, 0.47f, 0.84f, 1.0f);
+        // Color rojo brillante para el punto trazador
+        GLES20.glUniform4f(colorHandle, 1.0f, 0.2f, 0.2f, 1.0f);
 
         Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0);
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0);
@@ -486,14 +512,25 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     }
 
     /**
-     * Rota la cámara
+     * Rota la cámara (sistema orbital)
      */
     public void rotateCamera(float deltaX, float deltaY) {
         cameraRotationX += deltaX;
         cameraRotationY += deltaY;
 
-        // Limitar rotación vertical
+        // Limitar rotación vertical para evitar inversión
         cameraRotationX = Math.max(-89f, Math.min(89f, cameraRotationX));
+
+        // La rotación horizontal puede ser completa (360°)
+        if (cameraRotationY > 360f) cameraRotationY -= 360f;
+        if (cameraRotationY < 0f) cameraRotationY += 360f;
+    }
+
+    /**
+     * Ajusta la distancia de la cámara (zoom)
+     */
+    public void setCameraDistance(float distance) {
+        this.cameraDistance = distance;
     }
 
     /**
@@ -503,7 +540,11 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         this.radius = radius;
         this.currentTheta = 0.0;
         this.isAnimating = true;
+        this.animationComplete = false;
         this.trailPoints.clear();
+
+        // Ajustar distancia de cámara según el radio
+        this.cameraDistance = (float) (radius * 8);
     }
 
     /**
