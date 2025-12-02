@@ -27,6 +27,10 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     private float cameraRotationX = 30f;
     private float cameraRotationY = 45f;
     private float cameraDistance = 400f;
+    
+    // Animación de zoom de cámara
+    private float targetCameraDistance = 400f;
+    private static final float CAMERA_ZOOM_SPEED = 0.08f; // Velocidad de transición suave
 
     // Parámetros de animación
     private double radius = 50.0;
@@ -35,6 +39,15 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     private boolean animationComplete = false;
     private static final double THETA_INCREMENT = 0.02;
     private static final double TWO_PI = 2 * Math.PI;
+    
+    // Animación de brillo del área al completar (efecto único)
+    private float areaGlowAlpha = 0.0f;
+    private boolean areaGlowActive = false;
+    private boolean areaGlowFadingOut = false;
+    private static final float GLOW_FADE_IN_SPEED = 0.04f;
+    private static final float GLOW_FADE_OUT_SPEED = 0.015f;
+    private static final float GLOW_HOLD_TIME = 60f; // Frames para mantener el brillo
+    private float glowHoldCounter = 0f;
 
     // Buffers de geometría
     private FloatBuffer cycloidTrailBuffer;
@@ -95,12 +108,19 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glViewport(0, 0, width, height);
 
         float ratio = (float) width / height;
-        Matrix.frustumM(projectionMatrix, 0, -ratio, ratio, -1, 1, 3, 1000);
+        // Aumentar el far plane para soportar radios muy grandes
+        Matrix.frustumM(projectionMatrix, 0, -ratio, ratio, -1, 1, 3, 50000);
     }
 
     @Override
     public void onDrawFrame(GL10 unused) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+
+        // Actualizar animación de zoom de cámara (transición suave)
+        updateCameraZoom();
+        
+        // Actualizar animación de brillo del área
+        updateAreaGlow();
 
         // Actualizar animación
         if (isAnimating) {
@@ -120,6 +140,56 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
             drawCircle();
             drawSpokes();
             drawTracerPoint();
+        }
+    }
+
+    /**
+     * Actualiza la animación suave del zoom de cámara
+     * Interpola gradualmente hacia la distancia objetivo
+     */
+    private void updateCameraZoom() {
+        if (Math.abs(cameraDistance - targetCameraDistance) > 0.5f) {
+            // Interpolación suave (lerp) hacia la distancia objetivo
+            cameraDistance += (targetCameraDistance - cameraDistance) * CAMERA_ZOOM_SPEED;
+        } else {
+            cameraDistance = targetCameraDistance;
+        }
+    }
+    
+    /**
+     * Actualiza la animación de brillo del área
+     * Crea un efecto de destello único: fade-in -> hold -> fade-out
+     */
+    private void updateAreaGlow() {
+        if (animationComplete && !areaGlowActive && !areaGlowFadingOut && areaGlowAlpha == 0.0f) {
+            // Iniciar animación de brillo cuando se completa el cicloide
+            areaGlowActive = true;
+            areaGlowAlpha = 0.0f;
+            glowHoldCounter = 0f;
+        }
+        
+        if (areaGlowActive) {
+            if (!areaGlowFadingOut) {
+                // Fase de entrada suave (fade in)
+                if (areaGlowAlpha < 1.0f) {
+                    areaGlowAlpha += GLOW_FADE_IN_SPEED;
+                    if (areaGlowAlpha > 1.0f) areaGlowAlpha = 1.0f;
+                } else {
+                    // Mantener el brillo por un momento
+                    glowHoldCounter++;
+                    if (glowHoldCounter >= GLOW_HOLD_TIME) {
+                        areaGlowFadingOut = true;
+                    }
+                }
+            } else {
+                // Fase de salida suave (fade out)
+                areaGlowAlpha -= GLOW_FADE_OUT_SPEED;
+                if (areaGlowAlpha <= 0.0f) {
+                    areaGlowAlpha = 0.0f;
+                    areaGlowActive = false;
+                    // No resetear areaGlowFadingOut para que no vuelva a activarse
+                }
+            }
         }
     }
 
@@ -240,80 +310,152 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     }
 
     /**
-     * Dibuja el círculo rodante
+     * Dibuja la rueda realista con neumático, rin y buje
      */
     private void drawCircle() {
         double centerX = currentTheta * radius;
         double centerY = radius;
-
         int segments = 64;
-        float[] vertices = new float[(segments + 1) * 3];
-
-        for (int i = 0; i <= segments; i++) {
-            double angle = (i / (double) segments) * TWO_PI;
-            vertices[i * 3] = (float) (centerX + radius * Math.cos(angle));
-            vertices[i * 3 + 1] = (float) (centerY + radius * Math.sin(angle));
-            vertices[i * 3 + 2] = 0f;
-        }
-
-        ByteBuffer bb = ByteBuffer.allocateDirect(vertices.length * 4);
-        bb.order(ByteOrder.nativeOrder());
-        circleBuffer = bb.asFloatBuffer();
-        circleBuffer.put(vertices);
-        circleBuffer.position(0);
-
+        
         GLES20.glUseProgram(shaderProgram);
-
         int positionHandle = GLES20.glGetAttribLocation(shaderProgram, "vPosition");
         int colorHandle = GLES20.glGetUniformLocation(shaderProgram, "vColor");
         int mvpMatrixHandle = GLES20.glGetUniformLocation(shaderProgram, "uMVPMatrix");
-
-        GLES20.glEnableVertexAttribArray(positionHandle);
-        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, circleBuffer);
-
-        // Color rojo semi-transparente
-        GLES20.glUniform4f(colorHandle, 1f, 0.39f, 0.39f, 0.3f);
-
+        
         Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0);
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0);
         GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
-
+        
+        // === 1. NEUMÁTICO EXTERIOR (negro grueso) ===
+        float[] tireVertices = new float[(segments + 1) * 3];
+        for (int i = 0; i <= segments; i++) {
+            double angle = (i / (double) segments) * TWO_PI;
+            tireVertices[i * 3] = (float) (centerX + radius * Math.cos(angle));
+            tireVertices[i * 3 + 1] = (float) (centerY + radius * Math.sin(angle));
+            tireVertices[i * 3 + 2] = 0f;
+        }
+        FloatBuffer tireBuffer = createFloatBuffer(tireVertices);
+        GLES20.glEnableVertexAttribArray(positionHandle);
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, tireBuffer);
+        GLES20.glUniform4f(colorHandle, 0.15f, 0.15f, 0.15f, 1.0f); // Negro oscuro
+        GLES20.glLineWidth(8f);
+        GLES20.glDrawArrays(GLES20.GL_LINE_LOOP, 0, segments + 1);
+        
+        // === 2. RIN EXTERIOR (plateado) ===
+        float rimRadius = (float) (radius * 0.85);
+        float[] rimVertices = new float[(segments + 1) * 3];
+        for (int i = 0; i <= segments; i++) {
+            double angle = (i / (double) segments) * TWO_PI;
+            rimVertices[i * 3] = (float) (centerX + rimRadius * Math.cos(angle));
+            rimVertices[i * 3 + 1] = (float) (centerY + rimRadius * Math.sin(angle));
+            rimVertices[i * 3 + 2] = 0f;
+        }
+        FloatBuffer rimBuffer = createFloatBuffer(rimVertices);
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, rimBuffer);
+        GLES20.glUniform4f(colorHandle, 0.75f, 0.75f, 0.8f, 1.0f); // Plateado
+        GLES20.glLineWidth(3f);
+        GLES20.glDrawArrays(GLES20.GL_LINE_LOOP, 0, segments + 1);
+        
+        // === 3. RIN INTERIOR (plateado más oscuro) ===
+        float innerRimRadius = (float) (radius * 0.20);
+        float[] innerRimVertices = new float[(segments + 1) * 3];
+        for (int i = 0; i <= segments; i++) {
+            double angle = (i / (double) segments) * TWO_PI;
+            innerRimVertices[i * 3] = (float) (centerX + innerRimRadius * Math.cos(angle));
+            innerRimVertices[i * 3 + 1] = (float) (centerY + innerRimRadius * Math.sin(angle));
+            innerRimVertices[i * 3 + 2] = 0f;
+        }
+        FloatBuffer innerRimBuffer = createFloatBuffer(innerRimVertices);
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, innerRimBuffer);
+        GLES20.glUniform4f(colorHandle, 0.6f, 0.6f, 0.65f, 1.0f); // Plateado oscuro
         GLES20.glLineWidth(4f);
         GLES20.glDrawArrays(GLES20.GL_LINE_LOOP, 0, segments + 1);
-
+        
+        // === 4. BUJE CENTRAL (relleno oscuro) ===
+        float hubRadius = (float) (radius * 0.08);
+        int hubSegments = 24;
+        float[] hubVertices = new float[(hubSegments + 2) * 3]; // +2 para el centro y cierre
+        // Centro del buje
+        hubVertices[0] = (float) centerX;
+        hubVertices[1] = (float) centerY;
+        hubVertices[2] = 0f;
+        for (int i = 0; i <= hubSegments; i++) {
+            double angle = (i / (double) hubSegments) * TWO_PI;
+            hubVertices[(i + 1) * 3] = (float) (centerX + hubRadius * Math.cos(angle));
+            hubVertices[(i + 1) * 3 + 1] = (float) (centerY + hubRadius * Math.sin(angle));
+            hubVertices[(i + 1) * 3 + 2] = 0f;
+        }
+        FloatBuffer hubBuffer = createFloatBuffer(hubVertices);
+        GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, hubBuffer);
+        GLES20.glUniform4f(colorHandle, 0.3f, 0.3f, 0.35f, 1.0f); // Gris oscuro
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_FAN, 0, hubSegments + 2);
+        
         GLES20.glDisableVertexAttribArray(positionHandle);
+    }
+    
+    /**
+     * Helper para crear FloatBuffer
+     */
+    private FloatBuffer createFloatBuffer(float[] vertices) {
+        ByteBuffer bb = ByteBuffer.allocateDirect(vertices.length * 4);
+        bb.order(ByteOrder.nativeOrder());
+        FloatBuffer buffer = bb.asFloatBuffer();
+        buffer.put(vertices);
+        buffer.position(0);
+        return buffer;
     }
 
     /**
-     * Dibuja los radios del círculo (rayos de la rueda)
+     * Dibuja los radios de la rueda estilo bicicleta
+     * Con patrón cruzado realista
      */
     private void drawSpokes() {
         double centerX = currentTheta * radius;
         double centerY = radius;
 
-        int numSpokes = 24; // Más radios para parecer rueda de bicicleta
-        float[] vertices = new float[numSpokes * 6];
-
+        int numSpokes = 16; // Número de radios por lado
+        float innerRadius = (float) (radius * 0.10); // Desde el buje
+        float outerRadius = (float) (radius * 0.83); // Hasta el rin
+        
+        // Crear radios con patrón cruzado (como rueda de bicicleta real)
+        List<Float> spokeVertices = new ArrayList<>();
+        
         for (int i = 0; i < numSpokes; i++) {
-            double angle = -currentTheta + (i * TWO_PI / numSpokes);
-
-            // Desde el rin interior hasta el borde
-            float innerRadius = (float) (radius * 0.15f);
-
-            vertices[i * 6] = (float) (centerX + innerRadius * Math.sin(angle));
-            vertices[i * 6 + 1] = (float) (centerY - innerRadius * Math.cos(angle));
-            vertices[i * 6 + 2] = 0f;
-
-            vertices[i * 6 + 3] = (float) (centerX + radius * Math.sin(angle));
-            vertices[i * 6 + 4] = (float) (centerY - radius * Math.cos(angle));
-            vertices[i * 6 + 5] = 0f;
+            // Radio que va hacia la derecha (cruzado)
+            double angle1 = -currentTheta + (i * TWO_PI / numSpokes);
+            double angle2 = -currentTheta + ((i + 2) * TWO_PI / numSpokes); // Cruzado 2 posiciones
+            
+            // Desde el buje
+            spokeVertices.add((float) (centerX + innerRadius * Math.cos(angle1)));
+            spokeVertices.add((float) (centerY + innerRadius * Math.sin(angle1)));
+            spokeVertices.add(0f);
+            
+            // Hasta el rin (cruzado)
+            spokeVertices.add((float) (centerX + outerRadius * Math.cos(angle2)));
+            spokeVertices.add((float) (centerY + outerRadius * Math.sin(angle2)));
+            spokeVertices.add(0f);
+        }
+        
+        // Segundo set de radios cruzados en dirección opuesta
+        for (int i = 0; i < numSpokes; i++) {
+            double angle1 = -currentTheta + ((i + 0.5) * TWO_PI / numSpokes);
+            double angle2 = -currentTheta + ((i - 1.5) * TWO_PI / numSpokes);
+            
+            spokeVertices.add((float) (centerX + innerRadius * Math.cos(angle1)));
+            spokeVertices.add((float) (centerY + innerRadius * Math.sin(angle1)));
+            spokeVertices.add(0f);
+            
+            spokeVertices.add((float) (centerX + outerRadius * Math.cos(angle2)));
+            spokeVertices.add((float) (centerY + outerRadius * Math.sin(angle2)));
+            spokeVertices.add(0f);
+        }
+        
+        float[] vertices = new float[spokeVertices.size()];
+        for (int i = 0; i < spokeVertices.size(); i++) {
+            vertices[i] = spokeVertices.get(i);
         }
 
-        ByteBuffer bb = ByteBuffer.allocateDirect(vertices.length * 4);
-        bb.order(ByteOrder.nativeOrder());
-        spokesBuffer = bb.asFloatBuffer();
-        spokesBuffer.put(vertices);
-        spokesBuffer.position(0);
+        spokesBuffer = createFloatBuffer(vertices);
 
         GLES20.glUseProgram(shaderProgram);
 
@@ -324,15 +466,15 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnableVertexAttribArray(positionHandle);
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, spokesBuffer);
 
-        // Color plateado para los radios
-        GLES20.glUniform4f(colorHandle, 0.75f, 0.75f, 0.8f, 1.0f);
+        // Color plateado metálico para los radios
+        GLES20.glUniform4f(colorHandle, 0.7f, 0.7f, 0.75f, 0.9f);
 
         Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0);
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0);
         GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
 
-        GLES20.glLineWidth(2f);
-        GLES20.glDrawArrays(GLES20.GL_LINES, 0, numSpokes * 2);
+        GLES20.glLineWidth(1.5f);
+        GLES20.glDrawArrays(GLES20.GL_LINES, 0, vertices.length / 3);
 
         GLES20.glDisableVertexAttribArray(positionHandle);
     }
@@ -414,7 +556,7 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     }
 
     /**
-     * Dibuja el área bajo la curva
+     * Dibuja el área bajo la curva con efecto de brillo al completar
      */
     private void drawArea() {
         if (trailPoints.size() < 2) return;
@@ -458,11 +600,7 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
             vertices[i] = areaVertices.get(i);
         }
 
-        ByteBuffer bb = ByteBuffer.allocateDirect(vertices.length * 4);
-        bb.order(ByteOrder.nativeOrder());
-        areaBuffer = bb.asFloatBuffer();
-        areaBuffer.put(vertices);
-        areaBuffer.position(0);
+        areaBuffer = createFloatBuffer(vertices);
 
         GLES20.glUseProgram(shaderProgram);
 
@@ -473,13 +611,39 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnableVertexAttribArray(positionHandle);
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 12, areaBuffer);
 
-        GLES20.glUniform4f(colorHandle, 0.39f, 0.78f, 0.39f, 0.3f);
+        // Calcular color con efecto de brillo
+        float baseAlpha = 0.3f;
+        
+        if (areaGlowActive && areaGlowAlpha > 0.0f) {
+            // Efecto de destello único con verde claro brillante
+            float glowIntensity = areaGlowAlpha;
+            
+            // Color verde claro brillante (interpolación suave)
+            float r = 0.39f + glowIntensity * 0.3f;   // Añadir algo de luz
+            float g = 0.78f + glowIntensity * 0.22f;  // Verde más brillante -> 1.0
+            float b = 0.39f + glowIntensity * 0.4f;   // Más cyan/claro
+            float a = baseAlpha + glowIntensity * 0.4f; // Más visible durante el brillo
+            
+            GLES20.glUniform4f(colorHandle, r, g, b, a);
+        } else {
+            // Color normal
+            GLES20.glUniform4f(colorHandle, 0.39f, 0.78f, 0.39f, baseAlpha);
+        }
 
         Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0);
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0);
         GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, vertices.length / 3);
+        
+        // Dibujar capa adicional de brillo verde claro cuando está activo
+        if (areaGlowActive && areaGlowAlpha > 0.2f) {
+            float glowAlpha = areaGlowAlpha * 0.25f;
+            
+            // Capa de brillo verde claro/menta encima
+            GLES20.glUniform4f(colorHandle, 0.6f, 1.0f, 0.7f, glowAlpha);
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, vertices.length / 3);
+        }
 
         GLES20.glDisableVertexAttribArray(positionHandle);
     }
@@ -488,10 +652,10 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
      * Inicializa geometría estática
      */
     private void initializeStaticGeometry() {
-        // Eje X
+        // Eje X - extendido para soportar radios grandes
         float[] axisVertices = {
                 0f, 0f, 0f,
-                (float) (TWO_PI * 100), 0f, 0f
+                (float) (TWO_PI * 10000), 0f, 0f
         };
 
         ByteBuffer bb = ByteBuffer.allocateDirect(axisVertices.length * 4);
@@ -527,10 +691,30 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
     }
 
     /**
-     * Ajusta la distancia de la cámara (zoom)
+     * Ajusta la distancia de la cámara (zoom) con animación suave
      */
     public void setCameraDistance(float distance) {
+        this.targetCameraDistance = distance;
+    }
+    
+    /**
+     * Ajusta la distancia de la cámara inmediatamente (sin animación)
+     */
+    public void setCameraDistanceImmediate(float distance) {
         this.cameraDistance = distance;
+        this.targetCameraDistance = distance;
+    }
+
+    /**
+     * Calcula la distancia óptima de la cámara según el radio
+     * Usa una escala que mantiene la visualización proporcional para cualquier radio
+     */
+    private float calculateOptimalCameraDistance(double radius) {
+        // Factor base que funciona bien para todos los tamaños
+        // El cicloide se extiende 2*PI*radius en X y 2*radius en Y
+        // Necesitamos ver todo el ancho (2*PI*radius ≈ 6.28*radius)
+        // Usamos un factor de 10 para tener margen visual adecuado
+        return (float) (radius * 10);
     }
 
     /**
@@ -542,9 +726,15 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         this.isAnimating = true;
         this.animationComplete = false;
         this.trailPoints.clear();
+        
+        // Resetear animación de brillo
+        this.areaGlowActive = false;
+        this.areaGlowFadingOut = false;
+        this.areaGlowAlpha = 0.0f;
+        this.glowHoldCounter = 0f;
 
-        // Ajustar distancia de cámara según el radio
-        this.cameraDistance = (float) (radius * 8);
+        // Calcular y establecer la distancia óptima de la cámara con animación suave
+        this.targetCameraDistance = calculateOptimalCameraDistance(radius);
     }
 
     /**

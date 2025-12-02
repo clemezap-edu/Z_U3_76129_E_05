@@ -79,9 +79,9 @@ public class MainActivity extends AppCompatActivity {
         try {
             double radius = Double.parseDouble(radiusStr);
 
-            // Validación de rango
-            if (radius <= 0 || radius > 200) {
-                Toast.makeText(this, "El radio debe estar entre 1 y 200", Toast.LENGTH_SHORT).show();
+            // Validación de rango (sin límite superior estricto)
+            if (radius <= 0 || radius > 10000) {
+                Toast.makeText(this, "El radio debe estar entre 1 y 10000", Toast.LENGTH_SHORT).show();
                 return;
             }
 
