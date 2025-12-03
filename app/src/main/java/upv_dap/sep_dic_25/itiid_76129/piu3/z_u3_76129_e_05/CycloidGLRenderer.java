@@ -108,8 +108,10 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
         GLES20.glViewport(0, 0, width, height);
 
         float ratio = (float) width / height;
-        // Aumentar el far plane para soportar radios muy grandes
-        Matrix.frustumM(projectionMatrix, 0, -ratio, ratio, -1, 1, 3, 50000);
+        // Far plane muy grande para soportar radios hasta 10000
+        // El cicloide con radio 10000 se extiende ~62832 unidades en X
+        // Necesitamos far plane de al menos 150000 para verlo completo
+        Matrix.frustumM(projectionMatrix, 0, -ratio, ratio, -1, 1, 3, 500000);
     }
 
     @Override
@@ -707,14 +709,13 @@ public class CycloidGLRenderer implements GLSurfaceView.Renderer {
 
     /**
      * Calcula la distancia óptima de la cámara según el radio
-     * Usa una escala que mantiene la visualización proporcional para cualquier radio
+     * El cicloide se extiende 2*PI*radius en X, necesitamos ver todo el ancho
      */
     private float calculateOptimalCameraDistance(double radius) {
-        // Factor base que funciona bien para todos los tamaños
-        // El cicloide se extiende 2*PI*radius en X y 2*radius en Y
-        // Necesitamos ver todo el ancho (2*PI*radius ≈ 6.28*radius)
-        // Usamos un factor de 10 para tener margen visual adecuado
-        return (float) (radius * 10);
+        // El ancho total del cicloide es 2*PI*radius ≈ 6.28*radius
+        // Para ver todo correctamente, usamos un factor de 12
+        // Esto asegura que incluso con radio 10000 (ancho ~62832) se vea completo
+        return (float) (radius * 12);
     }
 
     /**
